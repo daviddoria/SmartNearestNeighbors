@@ -7,46 +7,24 @@
 #include <vtkPoints.h>
 #include <vtkSmartPointer.h>
 #include <vtkVertexGlyphFilter.h>
-#include <vtkXMLPolyDataReader.h>
 #include <vtkXMLPolyDataWriter.h>
 
-int main(int argc, char *argv[])
+void BSPNeighbors(vtkPoints* inputPoints, unsigned int centerPointId, vtkPoints* bspNeighbors)
 {
-  // Verify arguments
-  if(argc < 3)
-    {
-    std::cerr << "Required arguments: input.vtp output.vtp" << std::endl;
-    return EXIT_FAILURE;
-    }
-
-  // Parse arguments
-  std::string inputFileName = argv[1];
-  std::string outputFileName = argv[2];
-
-  vtkSmartPointer<vtkXMLPolyDataReader> reader =
-    vtkSmartPointer<vtkXMLPolyDataReader>::New();
-  reader->SetFileName( inputFileName.c_str() );
-  reader->Update();
-    
-  // Find the 'k' nearest neighbors
-  unsigned int k = 8;
-  
-  unsigned int centerPointId = 9;
-  
   double centerPoint[3];
-  reader->GetOutput()->GetPoint(centerPointId, centerPoint);
+  inputPoints->GetPoint(centerPointId, centerPoint);
   
   // Create a vtkPoints of all points except the center point
   vtkSmartPointer<vtkPoints> points = 
     vtkSmartPointer<vtkPoints>::New();
-  for(vtkIdType i = 0; i < reader->GetOutput()->GetNumberOfPoints(); ++i)
+  for(vtkIdType i = 0; i < inputPoints->GetNumberOfPoints(); ++i)
     {
     if(i == centerPointId)
       {
       continue;
       }
     double p[3];
-    reader->GetOutput()->GetPoint(i, p);
+    inputPoints->GetPoint(i, p);
     points->InsertNextPoint(p);
     }
   
@@ -57,7 +35,9 @@ int main(int argc, char *argv[])
   
   vtkSmartPointer<vtkIdList> result = 
     vtkSmartPointer<vtkIdList>::New();
-  
+     
+  // Find the k=8 nearest neighbors
+  unsigned int k = 8;
   pointTree->FindClosestNPoints(k, centerPoint, result);
   
   // Create a polydata of the result
@@ -76,6 +56,7 @@ int main(int argc, char *argv[])
     vtkSmartPointer<vtkPolyData>::New();
   kNearestPolydata->SetPoints(kNearestPoints);
 
+  // For demonstration only, we output the K nearest neighbors
   {
   vtkSmartPointer<vtkVertexGlyphFilter> vertexGlyphFilter =
     vtkSmartPointer<vtkVertexGlyphFilter>::New();
@@ -98,10 +79,6 @@ int main(int argc, char *argv[])
   // q_i is the ith nearest neighbor point
   // p is the center point (for which the kNearest points were found)
   
-  // Create a vtkPoints of the BSPNeighbors
-  vtkSmartPointer<vtkPoints> bspNeighborPoints = 
-    vtkSmartPointer<vtkPoints>::New();
-    
   for(unsigned int neighborId = 0; neighborId < k; ++neighborId) // test each kNeighbor point
     {
     bool valid = true;
@@ -132,26 +109,8 @@ int main(int argc, char *argv[])
     // Keep the point if all of the tests passed
     if(valid)
       {
-      bspNeighborPoints->InsertNextPoint(neighborPoint);
+      bspNeighbors->InsertNextPoint(neighborPoint);
       }
     } // end kNeighbors loop
 
-  vtkSmartPointer<vtkPolyData> bspNeighborPolydata = 
-    vtkSmartPointer<vtkPolyData>::New();
-  bspNeighborPolydata->SetPoints(bspNeighborPoints);
-
-  {
-  vtkSmartPointer<vtkVertexGlyphFilter> vertexGlyphFilter =
-    vtkSmartPointer<vtkVertexGlyphFilter>::New();
-  vertexGlyphFilter->SetInputConnection(bspNeighborPolydata->GetProducerPort());
-  vertexGlyphFilter->Update();
-
-  vtkSmartPointer<vtkXMLPolyDataWriter> writer =
-    vtkSmartPointer<vtkXMLPolyDataWriter>::New();
-  writer->SetFileName("bspNeighbors.vtp");
-  writer->SetInputConnection(vertexGlyphFilter->GetOutputPort());
-  writer->Write();
-  }
-  
-  return EXIT_SUCCESS;
 }

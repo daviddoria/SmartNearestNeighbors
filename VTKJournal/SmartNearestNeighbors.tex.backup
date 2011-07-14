@@ -1,0 +1,214 @@
+\documentclass{InsightArticle}
+
+\usepackage[dvips]{graphicx}
+\usepackage{float}
+\usepackage{subfigure}
+
+\usepackage[dvips,
+bookmarks,
+bookmarksopen,
+backref,
+colorlinks,linkcolor={blue},citecolor={blue},urlcolor={blue},
+]{hyperref}
+
+\title{Smart Nearest Neighbors}
+
+% 
+% NOTE: This is the last number of the "handle" URL that 
+% The Insight Journal assigns to your paper as part of the
+% submission process. Please replace the number "1338" with
+% the actual handle number that you get assigned.
+%
+\newcommand{\IJhandlerIDnumber}{3250}
+
+% Increment the release number whenever significant changes are made.
+% The author and/or editor can define 'significant' however they like.
+\release{0.00}
+
+% At minimum, give your name and an email address.  You can include a
+% snail-mail address if you like.
+
+\author{David Doria}
+\authoraddress{Army Research Laboratory, Aberdeen MD}
+
+
+\begin{document}
+
+\IJhandlefooter{\IJhandlerIDnumber}
+
+
+\ifpdf
+\else
+   %
+   % Commands for including Graphics when using latex
+   % 
+   \DeclareGraphicsExtensions{.eps,.jpg,.gif,.tiff,.bmp,.png}
+   \DeclareGraphicsRule{.jpg}{eps}{.jpg.bb}{`convert #1 eps:-}
+   \DeclareGraphicsRule{.gif}{eps}{.gif.bb}{`convert #1 eps:-}
+   \DeclareGraphicsRule{.tiff}{eps}{.tiff.bb}{`convert #1 eps:-}
+   \DeclareGraphicsRule{.bmp}{eps}{.bmp.bb}{`convert #1 eps:-}
+   \DeclareGraphicsRule{.png}{eps}{.png.bb}{`convert #1 eps:-}
+\fi
+
+
+\maketitle
+
+
+\ifhtml
+\chapter*{Front Matter\label{front}}
+\fi
+
+\begin{abstract}
+\noindent
+
+This document presents an implementation of two algorithms, Voronoi Neighbors and BSP Neighbors, to find nearest neighbors of a point in a point set that are more intelligent than a ``K nearest neighbors'' or a ``all neighbors within a radius'' query. This type of nearest neighbor query is more computationally expensive, but typically returns a ``better'' set of neighbors. The BSP Neighbors search ensures that there is less local duplication, while the Voronoi Neighbors search ensures that the spatial arrangement of the neighbors is as uniform as possible.
+
+The code is available here:
+https://github.com/daviddoria/SmartNearestNeighbors
+
+\end{abstract}
+
+\IJhandlenote{\IJhandlerIDnumber}
+
+\tableofcontents
+%%%%%%%%%%%%%%%%%%%%
+\section{Introduction}
+This document presents an implementation of an algorithm to perform a morphological opening on a graph. This opening consists of a series of erosions, followed by a series of dilations. This is often done as a first step in contour closure algorithms.
+
+This implementation is based on the algorithm described in \cite{Sappa}.
+
+%%%%%%%%%%%%%%%%%%%%
+\section{Graph Erosion}
+The morphological erosion operation on a graph is defined as removing all edges attached to \emph{end points}. An end point is a vertex with only one incident edge (a vertex with degree 1). The effect of performing multiple iterations of this operation on a graph is that small branches will be "absorbed" into a larger, parent branch.
+
+%%%%%%%%%%%%%%%%%%%%
+\section{Graph Dilation}
+The morphological dilation operation on a graph is only defined on a graph which has previously been eroded. The dilation adds back edges to current end points that were removed in a previous erosion operation.
+
+%%%%%%%%%%%%%%%%%%%%
+\section{Algorithm}
+\label{sec:Algorithm}
+Now that these two basic operations have been defined, we can describe the morphological opening operation. The algorithm proceeds as follow:
+\begin{itemize}
+ \item Erode the graph multiple times until a stopping criteria is met
+ \item Dilate the graph the same number of times as the graph was eroded
+\end{itemize}
+
+Note that this typically does not simply re-grow the original graph. If enough erosions were performed to absorb a branch completely, the branch will not grow back unless the erosion has continued so far that the root of the brach eventually becomes an end point of a future iteration.
+
+\subsection{Stopping Criteria}
+The only parameter to be set is how many erosions to perform (as the number of dilations must be the same number).
+
+\subsection{Speedup}
+\subsubsection{Naive Approach}
+The most straight forward implementation is to, at each iteration, perform an exhaustive search of the vertices to determine which ones have degree 1. Since finding the end points is the only costly procedure in the algorithm, this is a bad idea.
+
+\subsubsection{Speedup}
+An exhaustive search for end points must be performed on the original graph at the beginning of the algorithm. However, at both the erosion and dilation steps, we can search a much smaller set of vertices for end points.
+\paragraph{Erosion Speedup}
+After each erosion is performed, the set of candidate vertices for the next step (either erosion or dilation) consists of the vertices that were attached to the edges that were removed, excluding the vertices that are now degree 0 (no longer attached to the graph).
+\paragraph{Dilation Speedup}
+After each dilation, the set of candidate vertices for the next step consists of the vertices that were newly re-attached to the graph.
+
+If an edge was removed in the erosion process, as long as it belonged to the child-most branch that was entirely removed, it will not be regrown in the dilation process.
+
+
+% \begin{figure}[H]
+% \centering
+% \subfigure[A brown rectangular object.]
+%   {
+%   \includegraphics[width=0.3\linewidth]{images/rectangleSolid}
+%   \label{fig:EdgeImage:Image}
+%   }
+% \subfigure[A simple edge pixel classification. White pixels are edge pixels.]
+%   {
+%   \includegraphics[width=0.3\linewidth]{images/rectangleSolidEdgeThresholded}
+%   \label{fig:EdgeImage:EdgeImage}
+%   }
+% \caption{An image of an object and its corresponding edge image.}
+% \label{fig:EdgeImage}
+% \end{figure}
+
+% \begin{figure}[H]
+%   \centering
+%   \includegraphics[width=0.3\linewidth]{images/rectanglePoints}
+%   \caption{A solid point cloud of a rectangular 2D object.}
+%   \label{fig:SolidPointCloud}
+% \end{figure}
+
+%%%%%%%%%%%%%%%%%%%%
+\section{Demonstration}
+\label{sec:Demonstration}
+In this Figure \ref{fig:1Iteration}, we show the result of one erosion and one dilation.
+\begin{figure}[H]
+\centering
+\subfigure[Original graph.]
+  {
+  \includegraphics[width=0.3\linewidth]{images/opening1_0}
+  \label{fig:1Iteration:Original}
+  }
+\subfigure[Graph after 1 erosion.]
+  {
+  \includegraphics[width=0.3\linewidth]{images/opening1_1}
+  \label{fig:1Iteration:1Erosion}
+  }
+\subfigure[Graph after 1 erosion and 1 dilation.]
+  {
+  \includegraphics[width=0.3\linewidth]{images/opening1_2}
+  \label{fig:1Iteration:1Erosion1Dilation}
+  }
+\caption{Erosions = 1, Dilations = 1}
+\label{fig:1Iteration}
+\end{figure}
+
+In this Figure \ref{fig:1Iteration}, we show the result of one erosion and one dilation.
+\begin{figure}[H]
+\centering
+\subfigure[Original graph.]
+  {
+  \includegraphics[width=0.19\linewidth]{images/opening0}
+  \label{fig:2Iterations:Original}
+  }
+\subfigure[Graph after 1 erosion.]
+  {
+  \includegraphics[width=0.19\linewidth]{images/opening1}
+  \label{fig:2Iterations:1Erosion}
+  }
+\subfigure[Graph after 2 erosions.]
+  {
+  \includegraphics[width=0.19\linewidth]{images/opening2}
+  \label{fig:2Iterations:2Erosions}
+  }
+\subfigure[Graph after 2 erosions and 1 dilation.]
+  {
+  \includegraphics[width=0.19\linewidth]{images/opening3}
+  \label{fig:2Iterations:2Erosions1Dilation}
+  }
+\subfigure[Graph after 2 erosions and 2 dilations.]
+  {
+  \includegraphics[width=0.19\linewidth]{images/opening4}
+  \label{fig:2Iterations:2Erosions2Dilations}
+  }
+\caption{Erosions = 2, Dilations = 2}
+\label{fig:2Iterations}
+\end{figure}
+
+%%%%%%%%%%%%%%%
+\section{Code Snippet}
+
+\begin{verbatim}
+
+\end{verbatim}
+
+
+%%%%%%%%%%%%%%%
+\begin{thebibliography}{9}
+
+	\bibitem{Sappa}
+	  Sappa, A,
+	  \emph{Efficient Closed Contour Extraction from Range Image's Edge Points}.
+	  Proceedings of the 2005 IEEE International Conference on Robotics and Automation
+
+\end{thebibliography}
+
+\end{document}

@@ -5,6 +5,10 @@
 // Voronoi neighbors are a subset of the kNeighbors whose Voronoi cell is adjacent to V_p, 
 // the Voronoi cell of the point for which the kNeighbors were found
 
+// Custom
+#include "VoronoiNeighbors.h"
+
+// VTK
 #include <vtkIdList.h>
 #include <vtkKdTree.h>
 #include <vtkMath.h>
@@ -12,151 +16,160 @@
 #include <vtkPoints.h>
 #include <vtkSmartPointer.h>
 #include <vtkVertexGlyphFilter.h>
-#include <vtkXMLPolyDataReader.h>
-#include <vtkXMLPolyDataWriter.h>
 
-int main(int argc, char *argv[])
+// ITK
+#include "itkVoronoiDiagram2DGenerator.h"
+#include "itkImageFileWriter.h"
+#include "itkVTKPolyDataWriter.h"
+
+void VoronoiNeighbors(vtkPoints* points, unsigned int centerPointId, vtkPoints* neighbors)
 {
-  // Verify arguments
-  if(argc < 3)
-    {
-    std::cerr << "Required arguments: input.vtp output.vtp" << std::endl;
-    return EXIT_FAILURE;
-    }
-
-  // Parse arguments
-  std::string inputFileName = argv[1];
-  std::string outputFileName = argv[2];
-
-  vtkSmartPointer<vtkXMLPolyDataReader> reader =
-    vtkSmartPointer<vtkXMLPolyDataReader>::New();
-  reader->SetFileName( inputFileName.c_str() );
-  reader->Update();
-    
-  // Find the 'k' nearest neighbors
-  unsigned int k = 8;
-  
-  unsigned int centerPointId = 9;
+  // This function takes in a point cloud, 'points', and produces a point cloud, 'neighbors',
+  // of the 'centerPointId's Voronoi Neighbors
   
   double centerPoint[3];
-  reader->GetOutput()->GetPoint(centerPointId, centerPoint);
+  points->GetPoint(centerPointId, centerPoint);
   
-  // Create a vtkPoints of all points except the center point
-  vtkSmartPointer<vtkPoints> points = 
-    vtkSmartPointer<vtkPoints>::New();
-  for(vtkIdType i = 0; i < reader->GetOutput()->GetNumberOfPoints(); ++i)
+  double bounds[6];
+  points->GetBounds(bounds);
+  const double height = bounds[3] - bounds[2];
+  const double width = bounds[1] - bounds[0];
+  
+  typedef itk::VoronoiDiagram2D<double> VoronoiDiagramType;
+  typedef itk::VoronoiDiagram2DGenerator<double> VoronoiGeneratorType;
+
+  typedef VoronoiDiagramType::PointType PointType;
+  typedef VoronoiDiagramType::CellType CellType;
+  typedef VoronoiDiagramType::CellAutoPointer CellAutoPointer;
+  typedef CellType::PointIdIterator PointIdIterator;
+  typedef VoronoiDiagramType::NeighborIdIterator NeighborIdIterator;
+
+  VoronoiDiagramType::Pointer voronoiDiagram = VoronoiDiagramType::New();
+  VoronoiGeneratorType::Pointer voronoiGenerator = VoronoiGeneratorType::New();
+
+  PointType insize;
+  insize[0] = width;
+  insize[1] = height;
+  voronoiGenerator->SetBoundary(insize);
+
+  // Create a list of seeds
+  std::vector<PointType> seeds;
+  PointType seed0;
+  seed0[0] = 50;
+  seed0[1] = 50;
+  seeds.push_back(seed0);
+  
+  PointType seed1;
+  seed1[0] = 25;
+  seed1[1] = 25;
+  seeds.push_back(seed1);
+  
+  PointType seed2;
+  seed2[0] = 75;
+  seed2[1] = 25;
+  seeds.push_back(seed2);
+  
+  PointType seed3;
+  seed3[0] = 25;
+  seed3[1] = 75;
+  seeds.push_back(seed3);
+  
+  PointType seed4;
+  seed4[0] = 75;
+  seed4[1] = 75;
+  seeds.push_back(seed4);
+  
+  for(unsigned int i = 0; i < seeds.size(); ++i)
     {
-    if(i == centerPointId)
-      {
-      continue;
-      }
-    double p[3];
-    reader->GetOutput()->GetPoint(i, p);
-    points->InsertNextPoint(p);
+    voronoiGenerator->AddOneSeed(seeds[i]);
     }
   
-  // Create the tree
-  vtkSmartPointer<vtkKdTree> pointTree = 
-    vtkSmartPointer<vtkKdTree>::New();
-  pointTree->BuildLocatorFromPoints(points);
-  
-  vtkSmartPointer<vtkIdList> result = 
-    vtkSmartPointer<vtkIdList>::New();
-  
-  pointTree->FindClosestNPoints(k, centerPoint, result);
-  
-  // Create a polydata of the result
-  vtkSmartPointer<vtkPoints> kNearestPoints = 
-    vtkSmartPointer<vtkPoints>::New();
-  
-  for(vtkIdType i = 0; i < k; i++)
+  voronoiGenerator->Update();
+  voronoiDiagram = voronoiGenerator->GetOutput();
+
+  for(unsigned int i = 0; i < seeds.size(); i++)
     {
-    vtkIdType point_ind = result->GetId(i);
-    double p[3];
-    points->GetPoint(point_ind, p);
-    kNearestPoints->InsertNextPoint(p);
+    PointType currP = voronoiDiagram->GetSeed(i);
+    std::cout << "Seed No." << i << ": At (" << currP[0] << "," << currP[1] << ")" << std::endl;
+    std::cout << "  Boundary Vertices List (in order):";
+    CellAutoPointer currCell;
+    voronoiDiagram->GetCellId(i, currCell);
+    PointIdIterator currCellP;
+    for(currCellP = currCell->PointIdsBegin(); currCellP != currCell->PointIdsEnd(); ++currCellP)
+      {
+      std::cout << (*currCellP) << ",";
+      }
+    std::cout << std::endl;
+    std::cout << "  Neighbors (Seed No.):";
+    NeighborIdIterator currNeibor;
+    for(currNeibor = voronoiDiagram->NeighborIdsBegin(i); currNeibor != voronoiDiagram->NeighborIdsEnd(i); ++currNeibor)
+      {
+      std::cout << (*currNeibor) << ",";
+      }
+    std::cout << std::endl << std::endl;
     }
 
-  vtkSmartPointer<vtkPolyData> kNearestPolydata = 
-    vtkSmartPointer<vtkPolyData>::New();
-  kNearestPolydata->SetPoints(kNearestPoints);
-
-  {
-  vtkSmartPointer<vtkVertexGlyphFilter> vertexGlyphFilter =
-    vtkSmartPointer<vtkVertexGlyphFilter>::New();
-  vertexGlyphFilter->SetInputConnection(kNearestPolydata->GetProducerPort());
-  vertexGlyphFilter->Update();
-
-  vtkSmartPointer<vtkXMLPolyDataWriter> writer =
-    vtkSmartPointer<vtkXMLPolyDataWriter>::New();
-  writer->SetFileName("kNearest.vtp");
-  writer->SetInputConnection(vertexGlyphFilter->GetOutputPort());
-  writer->Write();
-  }
-  
-  // Each nearest neighbor point defines a halfspace. The BSP neighbors are a subset of the KNearestNeighbors
-  // which are in the intersection of all of the halfspaces induced by the kNearestNeighbor points.
-  
-  // Each kNeighbor defines a halfspace as:
-  // (x-q_i).(p-q_i) >= 0
-  // x is a test point (the collection of x that fit this criterion is exacly the halfspace)
-  // q_i is the ith nearest neighbor point
-  // p is the center point (for which the kNearest points were found)
-  
-  // Create a vtkPoints of the BSPNeighbors
-  vtkSmartPointer<vtkPoints> bspNeighborPoints = 
-    vtkSmartPointer<vtkPoints>::New();
-    
-  for(unsigned int neighborId = 0; neighborId < k; ++neighborId) // test each kNeighbor point
+  std::cout << "Vertices Informations:" << std::endl;
+  VoronoiDiagramType::VertexIterator allVerts;
+  int j = 0;
+  for(allVerts = voronoiDiagram->VertexBegin(); allVerts != voronoiDiagram->VertexEnd(); ++allVerts)
     {
-    bool valid = true;
+    voronoiDiagram->SetPoint(j, *allVerts);
+    std::cout << "Vertices No." << j;
+    j++;
+    std::cout << ": At (" << (*allVerts)[0] << "," << (*allVerts)[1] << ")" << std::endl;
+    }
 
-    double neighborPoint[3];
-    kNearestPoints->GetPoint(neighborId, neighborPoint);
+  // Write the resulting mesh
+  typedef itk::VTKPolyDataWriter<VoronoiDiagramType::Superclass> WriterType;
+  WriterType::Pointer writer = WriterType::New();
+  writer->SetInput(voronoiDiagram);
+  writer->SetFileName("voronoi.vtk");
+  writer->Update();
 
-    for(unsigned int halfSpaceId = 0; halfSpaceId < k; ++halfSpaceId) // against each halfspace
-      {
-      double halfSpacePoint[3];
-      kNearestPoints->GetPoint(halfSpaceId, halfSpacePoint);
-      
-      // (x-q_i).(p-q_i) >= 0
-      // A.B >= 0
-      double A[3];
-      vtkMath::Subtract(neighborPoint, halfSpacePoint, A);
-      
-      double B[3];
-      vtkMath::Subtract(centerPoint, halfSpacePoint, B);
-      
-      if(!(vtkMath::Dot(A,B) >= 0))
-	{
-	valid = false;
-	break;
-	}
-      } // end halfspace loop
-    
-    // Keep the point if all of the tests passed
-    if(valid)
-      {
-      bspNeighborPoints->InsertNextPoint(neighborPoint);
-      }
-    } // end kNeighbors loop
-
-  vtkSmartPointer<vtkPolyData> bspNeighborPolydata = 
-    vtkSmartPointer<vtkPolyData>::New();
-  bspNeighborPolydata->SetPoints(bspNeighborPoints);
-
+  // Setup an image to visualize the input
   {
-  vtkSmartPointer<vtkVertexGlyphFilter> vertexGlyphFilter =
-    vtkSmartPointer<vtkVertexGlyphFilter>::New();
-  vertexGlyphFilter->SetInputConnection(bspNeighborPolydata->GetProducerPort());
-  vertexGlyphFilter->Update();
+  typedef itk::Image< unsigned char, 2>  ImageType;
 
-  vtkSmartPointer<vtkXMLPolyDataWriter> writer =
-    vtkSmartPointer<vtkXMLPolyDataWriter>::New();
-  writer->SetFileName("bspNeighbors.vtp");
-  writer->SetInputConnection(vertexGlyphFilter->GetOutputPort());
-  writer->Write();
-  }
+  ImageType::IndexType start;
+  start.Fill(0);
+
+  ImageType::SizeType size;
+  size.Fill(100);
+
+  ImageType::RegionType region(start,size);
+
+  ImageType::Pointer image = ImageType::New();
+  image->SetRegions(region);
+  image->Allocate();
+  image->FillBuffer(0);
+
+  ImageType::IndexType ind;
+  ind[0] = 50;
+  ind[1] = 50;
+  image->SetPixel(ind, 255);
+
+  ind[0] = 25;
+  ind[1] = 25;
+  image->SetPixel(ind, 255);
+
+  ind[0] = 75;
+  ind[1] = 25;
+  image->SetPixel(ind, 255);
+
+  ind[0] = 25;
+  ind[1] = 75;
+  image->SetPixel(ind, 255);
   
-  return EXIT_SUCCESS;
+  ind[0] = 75;
+  ind[1] = 75;
+  image->SetPixel(ind, 255);
+
+  typedef  itk::ImageFileWriter< ImageType  > WriterType;
+  WriterType::Pointer writer = WriterType::New();
+  writer->SetFileName("image.png");
+  writer->SetInput(image);
+  writer->Update();
+  }
+
 }
