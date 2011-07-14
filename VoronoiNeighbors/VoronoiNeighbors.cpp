@@ -1,3 +1,21 @@
+/*=========================================================================
+ *
+ *  Copyright David Doria 2011 daviddoria@gmail.com
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0.txt
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *
+ *=========================================================================*/
+
 // This algorithm is explained in "Point Primitives for Interactive Modeling and Processing of 3D Geometry"
 
 // Voronoi cell V_i of q_i is
@@ -22,14 +40,21 @@
 #include "itkImageFileWriter.h"
 #include "itkVTKPolyDataWriter.h"
 
-void VoronoiNeighbors(vtkPoints* points, unsigned int centerPointId, vtkPoints* neighbors)
+void VoronoiNeighbors(vtkPoints* points, unsigned int centerPointId, vtkPoints* neighborPoints)
 {
   // This function takes in a point cloud, 'points', and produces a point cloud, 'neighbors',
   // of the 'centerPointId's Voronoi Neighbors
   
+  if(centerPointId > points->GetNumberOfPoints() - 1)
+    {
+    std::cerr << "You have requested the neighbors of point " << centerPointId
+	      << " but the input only has " << points->GetNumberOfPoints() << " points!" << std::endl;
+    exit(-1);
+    }
+  /*
   double centerPoint[3];
   points->GetPoint(centerPointId, centerPoint);
-  
+  */
   double bounds[6];
   points->GetBounds(bounds);
   const double height = bounds[3] - bounds[2];
@@ -47,77 +72,58 @@ void VoronoiNeighbors(vtkPoints* points, unsigned int centerPointId, vtkPoints* 
   VoronoiDiagramType::Pointer voronoiDiagram = VoronoiDiagramType::New();
   VoronoiGeneratorType::Pointer voronoiGenerator = VoronoiGeneratorType::New();
 
-  PointType insize;
-  insize[0] = width;
-  insize[1] = height;
-  voronoiGenerator->SetBoundary(insize);
+  PointType boudingSize;
+  boudingSize[0] = width;
+  boudingSize[1] = height;
+  voronoiGenerator->SetBoundary(boudingSize);
+  std::cout << "Boundary size set to " << boudingSize << std::endl;
+  
+  PointType origin;
+  origin[0] = bounds[0];
+  origin[1] = bounds[2];
+  voronoiGenerator->SetOrigin(origin);
+  std::cout << "Origin set to " << origin << std::endl;
 
   // Create a list of seeds
   std::vector<PointType> seeds;
-  PointType seed0;
-  seed0[0] = 50;
-  seed0[1] = 50;
-  seeds.push_back(seed0);
   
-  PointType seed1;
-  seed1[0] = 25;
-  seed1[1] = 25;
-  seeds.push_back(seed1);
+  std::cout << "There are " << points->GetNumberOfPoints() << " points" << std::endl;
   
-  PointType seed2;
-  seed2[0] = 75;
-  seed2[1] = 25;
-  seeds.push_back(seed2);
-  
-  PointType seed3;
-  seed3[0] = 25;
-  seed3[1] = 75;
-  seeds.push_back(seed3);
-  
-  PointType seed4;
-  seed4[0] = 75;
-  seed4[1] = 75;
-  seeds.push_back(seed4);
-  
-  for(unsigned int i = 0; i < seeds.size(); ++i)
+  for(vtkIdType i = 0; i < points->GetNumberOfPoints(); ++i)
     {
+    double p[3];
+    points->GetPoint(i,p);
+  
+    PointType seed;
+    seed[0] = p[0];
+    seed[1] = p[1];
+    //std::cout << "Adding seed " << seed << std::endl;
+    seeds.push_back(seed);
     voronoiGenerator->AddOneSeed(seeds[i]);
     }
   
   voronoiGenerator->Update();
   voronoiDiagram = voronoiGenerator->GetOutput();
+  
+//  PointType centerPoint = voronoiDiagram->GetSeed(centerPointId);
+//  CellAutoPointer centerCell;
+//  voronoiDiagram->GetCellId(centerPointId, centerCell);
 
-  for(unsigned int i = 0; i < seeds.size(); i++)
+  for(NeighborIdIterator neighbors = voronoiDiagram->NeighborIdsBegin(centerPointId); neighbors != voronoiDiagram->NeighborIdsEnd(centerPointId); ++neighbors)
     {
-    PointType currP = voronoiDiagram->GetSeed(i);
-    std::cout << "Seed No." << i << ": At (" << currP[0] << "," << currP[1] << ")" << std::endl;
-    std::cout << "  Boundary Vertices List (in order):";
-    CellAutoPointer currCell;
-    voronoiDiagram->GetCellId(i, currCell);
-    PointIdIterator currCellP;
-    for(currCellP = currCell->PointIdsBegin(); currCellP != currCell->PointIdsEnd(); ++currCellP)
-      {
-      std::cout << (*currCellP) << ",";
-      }
-    std::cout << std::endl;
-    std::cout << "  Neighbors (Seed No.):";
-    NeighborIdIterator currNeibor;
-    for(currNeibor = voronoiDiagram->NeighborIdsBegin(i); currNeibor != voronoiDiagram->NeighborIdsEnd(i); ++currNeibor)
-      {
-      std::cout << (*currNeibor) << ",";
-      }
-    std::cout << std::endl << std::endl;
+    double p[3];
+    points->GetPoint(*neighbors, p);
+  
+    neighborPoints->InsertNextPoint(p);
     }
 
-  std::cout << "Vertices Informations:" << std::endl;
+  // Create a mesh of the Voronoi diagram
   VoronoiDiagramType::VertexIterator allVerts;
   int j = 0;
   for(allVerts = voronoiDiagram->VertexBegin(); allVerts != voronoiDiagram->VertexEnd(); ++allVerts)
     {
     voronoiDiagram->SetPoint(j, *allVerts);
-    std::cout << "Vertices No." << j;
     j++;
-    std::cout << ": At (" << (*allVerts)[0] << "," << (*allVerts)[1] << ")" << std::endl;
     }
 
   // Write the resulting mesh
@@ -126,50 +132,5 @@ void VoronoiNeighbors(vtkPoints* points, unsigned int centerPointId, vtkPoints* 
   writer->SetInput(voronoiDiagram);
   writer->SetFileName("voronoi.vtk");
   writer->Update();
-
-  // Setup an image to visualize the input
-  {
-  typedef itk::Image< unsigned char, 2>  ImageType;
-
-  ImageType::IndexType start;
-  start.Fill(0);
-
-  ImageType::SizeType size;
-  size.Fill(100);
-
-  ImageType::RegionType region(start,size);
-
-  ImageType::Pointer image = ImageType::New();
-  image->SetRegions(region);
-  image->Allocate();
-  image->FillBuffer(0);
-
-  ImageType::IndexType ind;
-  ind[0] = 50;
-  ind[1] = 50;
-  image->SetPixel(ind, 255);
-
-  ind[0] = 25;
-  ind[1] = 25;
-  image->SetPixel(ind, 255);
-
-  ind[0] = 75;
-  ind[1] = 25;
-  image->SetPixel(ind, 255);
-
-  ind[0] = 25;
-  ind[1] = 75;
-  image->SetPixel(ind, 255);
-  
-  ind[0] = 75;
-  ind[1] = 75;
-  image->SetPixel(ind, 255);
-
-  typedef  itk::ImageFileWriter< ImageType  > WriterType;
-  WriterType::Pointer writer = WriterType::New();
-  writer->SetFileName("image.png");
-  writer->SetInput(image);
-  writer->Update();
-  }
 
 }
