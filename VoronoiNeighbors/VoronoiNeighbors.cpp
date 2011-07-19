@@ -40,6 +40,35 @@
 #include "itkImageFileWriter.h"
 #include "itkVTKPolyDataWriter.h"
 
+typedef itk::VoronoiDiagram2DGenerator<double> VoronoiGeneratorType;
+typedef itk::VoronoiDiagram2D<double> VoronoiDiagramType;
+typedef VoronoiDiagramType::PointType PointType;
+
+struct ParallelSortObject
+{
+  PointType point;
+  unsigned int id;
+};
+
+/* Compare point coordinates  in the y direction. */
+bool pointSorter(ParallelSortObject arg1, ParallelSortObject arg2)
+{
+  if ( arg1.point[1] < arg2.point[1] ) { return 1; }
+  else if ( arg1.point[1] > arg2.point[1] )
+    {
+    return 0;
+    }
+  else if ( arg1.point[0] < arg2.point[0] )
+    {
+    return 1;
+    }
+  else if ( arg1.point[0] > arg2.point[0] )
+    {
+    return 0;
+    }
+  else { return 1; }
+}
+
 void VoronoiNeighbors(vtkPoints* points, unsigned int centerPointId, vtkPoints* neighborPoints)
 {
   // This function takes in a point cloud, 'points', and produces a point cloud, 'neighbors',
@@ -51,19 +80,7 @@ void VoronoiNeighbors(vtkPoints* points, unsigned int centerPointId, vtkPoints* 
 	      << " but the input only has " << points->GetNumberOfPoints() << " points!" << std::endl;
     exit(-1);
     }
-  /*
-  double centerPoint[3];
-  points->GetPoint(centerPointId, centerPoint);
-  */
-  double bounds[6];
-  points->GetBounds(bounds);
-  const double height = bounds[3] - bounds[2];
-  const double width = bounds[1] - bounds[0];
   
-  typedef itk::VoronoiDiagram2D<double> VoronoiDiagramType;
-  typedef itk::VoronoiDiagram2DGenerator<double> VoronoiGeneratorType;
-
-  typedef VoronoiDiagramType::PointType PointType;
   typedef VoronoiDiagramType::CellType CellType;
   typedef VoronoiDiagramType::CellAutoPointer CellAutoPointer;
   typedef CellType::PointIdIterator PointIdIterator;
@@ -72,9 +89,14 @@ void VoronoiNeighbors(vtkPoints* points, unsigned int centerPointId, vtkPoints* 
   VoronoiDiagramType::Pointer voronoiDiagram = VoronoiDiagramType::New();
   VoronoiGeneratorType::Pointer voronoiGenerator = VoronoiGeneratorType::New();
 
+  double bounds[6];
+  points->GetBounds(bounds);
+  
   PointType boudingSize;
-  boudingSize[0] = width;
-  boudingSize[1] = height;
+  boudingSize[0] = bounds[1];
+  boudingSize[1] = bounds[3];
+  //boudingSize[0] = width;
+  //boudingSize[1] = height;
   voronoiGenerator->SetBoundary(boudingSize);
   std::cout << "Boundary size set to " << boudingSize << std::endl;
   
@@ -85,9 +107,10 @@ void VoronoiNeighbors(vtkPoints* points, unsigned int centerPointId, vtkPoints* 
   std::cout << "Origin set to " << origin << std::endl;
 
   // Create a list of seeds
-  std::vector<PointType> seeds;
+  std::vector<ParallelSortObject> seedSortObjects;
   
   std::cout << "There are " << points->GetNumberOfPoints() << " points" << std::endl;
+  
   
   for(vtkIdType i = 0; i < points->GetNumberOfPoints(); ++i)
     {
@@ -97,26 +120,57 @@ void VoronoiNeighbors(vtkPoints* points, unsigned int centerPointId, vtkPoints* 
     PointType seed;
     seed[0] = p[0];
     seed[1] = p[1];
-    //std::cout << "Adding seed " << seed << std::endl;
-    seeds.push_back(seed);
-    voronoiGenerator->AddOneSeed(seeds[i]);
+    std::cout << "Adding seed " << seed << std::endl;
+    ParallelSortObject parallelSortObject;
+    parallelSortObject.point = seed;
+    parallelSortObject.id = i;
+    seedSortObjects.push_back(parallelSortObject);
+    
+    }
+    
+  std::sort(seedSortObjects.begin(), seedSortObjects.end(), pointSorter);
+  
+  std::vector<unsigned int> newIds; // this will be a map from new id -> old id
+  for(unsigned int i = 0; i < seedSortObjects.size(); ++i)
+    {
+    voronoiGenerator->AddOneSeed(seedSortObjects[i].point);
+    newIds.push_back(seedSortObjects[i].id);
     }
   
   voronoiGenerator->Update();
   voronoiDiagram = voronoiGenerator->GetOutput();
   
-//  PointType centerPoint = voronoiDiagram->GetSeed(centerPointId);
-//  CellAutoPointer centerCell;
-//  voronoiDiagram->GetCellId(centerPointId, centerCell);
-
-  for(NeighborIdIterator neighbors = voronoiDiagram->NeighborIdsBegin(centerPointId); neighbors != voronoiDiagram->NeighborIdsEnd(centerPointId); ++neighbors)
+  // Find the new id of the center point
+  unsigned int newCenterPointId = 0;
+  for(unsigned int i = 0; i < seedSortObjects.size(); ++i)
+    {
+    if(seedSortObjects[i].id == centerPointId)
+      {
+      newCenterPointId = i;
+      break;
+      }
+    }
+  std::cout << "New center point id: " << newCenterPointId << std::endl;
+  
+  // Construct the output points
+  for(NeighborIdIterator neighbors = voronoiDiagram->NeighborIdsBegin(newCenterPointId); neighbors != voronoiDiagram->NeighborIdsEnd(newCenterPointId); ++neighbors)
     {
     double p[3];
-    points->GetPoint(*neighbors, p);
-  
+    points->GetPoint(newIds[*neighbors], p);
     neighborPoints->InsertNextPoint(p);
+  
+    // This also works
+    /*
+    PointType seed = voronoiGenerator->GetOutput()->GetSeed(*neighbors);
+    double p[3];
+    p[0] = seed[0];
+    p[1] = seed[1];
+    p[2] = 0;
+    neighborPoints->InsertNextPoint(p);
+    */
     }
 
+  {
   // Create a mesh of the Voronoi diagram
   VoronoiDiagramType::VertexIterator allVerts;
   int j = 0;
@@ -132,5 +186,5 @@ void VoronoiNeighbors(vtkPoints* points, unsigned int centerPointId, vtkPoints* 
   writer->SetInput(voronoiDiagram);
   writer->SetFileName("voronoi.vtk");
   writer->Update();
-
+  }
 }
