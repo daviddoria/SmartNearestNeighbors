@@ -16,57 +16,38 @@
  *
  *=========================================================================*/
 
-// Custom
-#include "VoronoiNeighbors.h"
-
-// STL
-#include <iostream>
-
 // VTK
 #include <vtkPlane.h>
-#include <vtkPolyData.h>
 #include <vtkPoints.h>
 #include <vtkPointSource.h>
 #include <vtkSmartPointer.h>
 #include <vtkVertexGlyphFilter.h>
+#include <vtkXMLPolyDataReader.h>
 #include <vtkXMLPolyDataWriter.h>
+
+// Custom
+#include "BSPNeighbors.h"
+
+void Project2D(vtkPoints* points3D, vtkPoints* points2D);
 
 int main(int argc, char *argv[])
 {
-  // This program generates a 2D point cloud and finds the Voronoi Neighbors
-  // of a particular point. The input point cloud, selected point, and
-  // output neighbors are written to "input.vtp", "point.vtp", and
-  // "neighbors.vtp", respectively.
-
   //Create a 3D point cloud
   vtkSmartPointer<vtkPointSource> pointSource =
     vtkSmartPointer<vtkPointSource>::New();
   pointSource->SetCenter(0.0, 0.0, 0.0);
   pointSource->SetNumberOfPoints(50);
   pointSource->SetRadius(5.0);
-  //pointSource->SetS
   pointSource->Update();
-
-  vtkSmartPointer<vtkPoints> points2D =
-    vtkSmartPointer<vtkPoints>::New();
-  for(unsigned int i = 0; i < pointSource->GetNumberOfPoints(); ++i)
-    {
-    double p3D[3];
-    pointSource->GetOutput()->GetPoint(i, p3D);
-    double origin[3] = {0.0, 0.0, 0.0};
-    double normal[3] = {0.0, 0.0, 1.0};
-    double p2D[3];
+    
+  vtkSmartPointer<vtkPoints> points2D = vtkSmartPointer<vtkPoints>::New();
+  Project2D(pointSource->GetOutput()->GetPoints(), points2D);
   
-    vtkPlane::ProjectPoint(p3D, origin, normal, p2D);
-    points2D->InsertNextPoint(p2D);
-    }
-
-  vtkSmartPointer<vtkPolyData> points2Dpolydata =
-    vtkSmartPointer<vtkPolyData>::New();
-  points2Dpolydata->SetPoints(points2D);
-
-  // Write the input to a file
   {
+  // Write the input
+  vtkSmartPointer<vtkPolyData> points2Dpolydata = vtkSmartPointer<vtkPolyData>::New();
+  points2Dpolydata->SetPoints(points2D);
+  
   vtkSmartPointer<vtkVertexGlyphFilter> vertexGlyphFilter =
     vtkSmartPointer<vtkVertexGlyphFilter>::New();
   vertexGlyphFilter->SetInputConnection(points2Dpolydata->GetProducerPort());
@@ -79,16 +60,17 @@ int main(int argc, char *argv[])
   writer->Write();
   }
   
-  unsigned int centerPointId = 0; // Find the Voronoi Neighbors of the point with a specified id
+  // Find the nearest neighbors of the 9th point
+  unsigned int queryPointId = 0;
   
   // Write the center point to a file
   {
-  vtkSmartPointer<vtkPoints> centerPoint = vtkSmartPointer<vtkPoints>::New();
+  vtkSmartPointer<vtkPoints> queryPoint = vtkSmartPointer<vtkPoints>::New();
   double p[3];
-  points2D->GetPoint(centerPointId, p);
-  centerPoint->InsertNextPoint(p);
+  points2D->GetPoint(queryPointId, p);
+  queryPoint->InsertNextPoint(p);
   vtkSmartPointer<vtkPolyData> polydata = vtkSmartPointer<vtkPolyData>::New();
-  polydata->SetPoints(centerPoint);
+  polydata->SetPoints(queryPoint);
   
   vtkSmartPointer<vtkVertexGlyphFilter> vertexGlyphFilter =
     vtkSmartPointer<vtkVertexGlyphFilter>::New();
@@ -97,29 +79,47 @@ int main(int argc, char *argv[])
 
   vtkSmartPointer<vtkXMLPolyDataWriter> writer =
     vtkSmartPointer<vtkXMLPolyDataWriter>::New();
-  writer->SetFileName("centerPoint.vtp");
+  writer->SetFileName("queryPoint.vtp");
   writer->SetInputConnection(vertexGlyphFilter->GetOutputPort());
   writer->Write();
   }
   
-  // Find the Voronoi Neighbors of the center point
-  vtkSmartPointer<vtkPoints> neighbors = vtkSmartPointer<vtkPoints>::New();
-  VoronoiNeighbors(points2D, centerPointId, neighbors);
-  
-  // Add the resulting neighbors to a polydata
-  vtkSmartPointer<vtkPolyData> polydata = vtkSmartPointer<vtkPolyData>::New();
-  polydata->SetPoints(neighbors);
-  
+  vtkSmartPointer<vtkPoints> bspNeighborPoints = 
+    vtkSmartPointer<vtkPoints>::New();
+    
+  BSPNeighbors(points2D, queryPointId, bspNeighborPoints);
+    
+  vtkSmartPointer<vtkPolyData> bspNeighborPolydata = 
+    vtkSmartPointer<vtkPolyData>::New();
+  bspNeighborPolydata->SetPoints(bspNeighborPoints);
+
+  {
   vtkSmartPointer<vtkVertexGlyphFilter> vertexGlyphFilter =
     vtkSmartPointer<vtkVertexGlyphFilter>::New();
-  vertexGlyphFilter->SetInputConnection(polydata->GetProducerPort());
+  vertexGlyphFilter->SetInputConnection(bspNeighborPolydata->GetProducerPort());
   vertexGlyphFilter->Update();
 
   vtkSmartPointer<vtkXMLPolyDataWriter> writer =
     vtkSmartPointer<vtkXMLPolyDataWriter>::New();
-  writer->SetFileName("VoronoiNeighbors.vtp");
+  writer->SetFileName("bspNeighbors.vtp");
   writer->SetInputConnection(vertexGlyphFilter->GetOutputPort());
   writer->Write();
+  }
   
   return EXIT_SUCCESS;
+}
+
+void Project2D(vtkPoints* points3D, vtkPoints* points2D)
+{
+  for(unsigned int i = 0; i < points3D->GetNumberOfPoints(); ++i)
+    {
+    double p3D[3];
+    points3D->GetPoint(i, p3D);
+    double origin[3] = {0.0, 0.0, 0.0};
+    double normal[3] = {0.0, 0.0, 1.0};
+    double p2D[3];
+  
+    vtkPlane::ProjectPoint(p3D, origin, normal, p2D);
+    points2D->InsertNextPoint(p2D);
+    }
 }

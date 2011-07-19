@@ -1,3 +1,21 @@
+/*=========================================================================
+ *
+ *  Copyright David Doria 2011 daviddoria@gmail.com
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0.txt
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *
+ *=========================================================================*/
+
 // This algorithm is explained in "Point Primitives for Interactive Modeling and Processing of 3D Geometry"
 
 #include <vtkIdList.h>
@@ -9,7 +27,7 @@
 #include <vtkVertexGlyphFilter.h>
 #include <vtkXMLPolyDataWriter.h>
 
-void BSPNeighbors(vtkPoints* inputPoints, unsigned int centerPointId, vtkPoints* bspNeighbors)
+void BSPNeighbors(vtkPoints* inputPoints, unsigned int centerPointId, vtkPoints* bspNeighbors, unsigned int k)
 {
   double centerPoint[3];
   inputPoints->GetPoint(centerPointId, centerPoint);
@@ -36,8 +54,7 @@ void BSPNeighbors(vtkPoints* inputPoints, unsigned int centerPointId, vtkPoints*
   vtkSmartPointer<vtkIdList> result = 
     vtkSmartPointer<vtkIdList>::New();
      
-  // Find the k=8 nearest neighbors
-  unsigned int k = 8;
+  // Find the k nearest neighbors
   pointTree->FindClosestNPoints(k, centerPoint, result);
   
   // Create a polydata of the result

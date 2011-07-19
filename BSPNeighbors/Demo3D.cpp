@@ -17,7 +17,9 @@
  *=========================================================================*/
 
 // VTK
+#include <vtkPlane.h>
 #include <vtkPoints.h>
+#include <vtkPointSource.h>
 #include <vtkSmartPointer.h>
 #include <vtkVertexGlyphFilter.h>
 #include <vtkXMLPolyDataReader.h>
@@ -28,29 +30,56 @@
 
 int main(int argc, char *argv[])
 {
-  // Verify arguments
-  if(argc < 3)
-    {
-    std::cerr << "Required arguments: input.vtp output.vtp" << std::endl;
-    return EXIT_FAILURE;
-    }
+  //Create a 3D point cloud
+  vtkSmartPointer<vtkPointSource> pointSource =
+    vtkSmartPointer<vtkPointSource>::New();
+  pointSource->SetCenter(0.0, 0.0, 0.0);
+  pointSource->SetNumberOfPoints(250);
+  pointSource->SetRadius(1.0);
+  pointSource->Update();
 
-  // Parse arguments
-  std::string inputFileName = argv[1];
-  std::string outputFileName = argv[2];
+  {
+  // Write the input
+  vtkSmartPointer<vtkVertexGlyphFilter> vertexGlyphFilter =
+    vtkSmartPointer<vtkVertexGlyphFilter>::New();
+  vertexGlyphFilter->SetInputConnection(pointSource->GetOutputPort());
+  vertexGlyphFilter->Update();
 
-  vtkSmartPointer<vtkXMLPolyDataReader> reader =
-    vtkSmartPointer<vtkXMLPolyDataReader>::New();
-  reader->SetFileName( inputFileName.c_str() );
-  reader->Update();
-    
-  // Find the nearest neighbors of the 9th point
-  unsigned int centerPointId = 9;
+  vtkSmartPointer<vtkXMLPolyDataWriter> writer =
+    vtkSmartPointer<vtkXMLPolyDataWriter>::New();
+  writer->SetFileName("input.vtp");
+  writer->SetInputConnection(vertexGlyphFilter->GetOutputPort());
+  writer->Write();
+  }
+  
+  // Find the nearest neighbors of the specified point
+  unsigned int queryPointId = 58;
+  
+  // Write the center point to a file
+  {
+  vtkSmartPointer<vtkPoints> queryPoint = vtkSmartPointer<vtkPoints>::New();
+  double p[3];
+  pointSource->GetOutput()->GetPoint(queryPointId, p);
+  queryPoint->InsertNextPoint(p);
+  vtkSmartPointer<vtkPolyData> polydata = vtkSmartPointer<vtkPolyData>::New();
+  polydata->SetPoints(queryPoint);
+  
+  vtkSmartPointer<vtkVertexGlyphFilter> vertexGlyphFilter =
+    vtkSmartPointer<vtkVertexGlyphFilter>::New();
+  vertexGlyphFilter->SetInputConnection(polydata->GetProducerPort());
+  vertexGlyphFilter->Update();
+
+  vtkSmartPointer<vtkXMLPolyDataWriter> writer =
+    vtkSmartPointer<vtkXMLPolyDataWriter>::New();
+  writer->SetFileName("queryPoint.vtp");
+  writer->SetInputConnection(vertexGlyphFilter->GetOutputPort());
+  writer->Write();
+  }
   
   vtkSmartPointer<vtkPoints> bspNeighborPoints = 
     vtkSmartPointer<vtkPoints>::New();
     
-  BSPNeighbors(reader->GetOutput()->GetPoints(), centerPointId, bspNeighborPoints);
+  BSPNeighbors(pointSource->GetOutput()->GetPoints(), queryPointId, bspNeighborPoints);
     
   vtkSmartPointer<vtkPolyData> bspNeighborPolydata = 
     vtkSmartPointer<vtkPolyData>::New();
