@@ -172,6 +172,8 @@ void VoronoiNeighbors(vtkPoints* points, unsigned int centerPointId, vtkPoints* 
 
   {
   // Create a mesh of the Voronoi diagram
+  // This code is not necessary after the commit: Ie6fa45dab69cb6b3df26896546d3962af172b035
+  {
   VoronoiDiagramType::VertexIterator allVerts;
   int j = 0;
   for(allVerts = voronoiDiagram->VertexBegin(); allVerts != voronoiDiagram->VertexEnd(); ++allVerts)
@@ -179,6 +181,7 @@ void VoronoiNeighbors(vtkPoints* points, unsigned int centerPointId, vtkPoints* 
     voronoiDiagram->SetPoint(j, *allVerts);
     j++;
     }
+  }
 
   // Write the resulting mesh
   typedef itk::VTKPolyDataWriter<VoronoiDiagramType::Superclass> WriterType;
